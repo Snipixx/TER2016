@@ -1,0 +1,740 @@
+\documentclass[twoside,12pt]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,left=2cm,right=2cm,top=2.5cm,bottom=2cm,headheight=40pt]{geometry}
+\usepackage[frenchb]{babel}
+\usepackage{libertine}
+\usepackage{amsmath,amsfonts,amsthm}
+\usepackage{tikz}
+\usepackage{fancyhdr}
+\usepackage[pdfencoding=unicode]{hyperref}
+\usepackage{listingsutf8}
+\newtheorem{prop}{Proposition}
+\newtheorem*{def*}{Définition}
+\newtheorem*{dem*}{Démonstration}
+\theoremstyle{remark}
+\newtheorem*{rem*}{Remarque}
+\usepackage{color}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\fontsize{7.5}{11}\selectfont\ttfamily,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+\usepackage[french,onelanguage,vlined,lined,boxed]{algorithm2e}
+\pagestyle{fancy}
+
+\renewcommand{\headrulewidth}{1pt}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancyhead[C]{\leftmark}
+\fancyhead[RE,LO]{}
+\fancyhead[RO,LE]{\includegraphics[scale=0.016]{image/UB.jpg}}
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+
+\begin{document}
+
+\begin{titlepage}
+  \begin{sffamily}
+  \begin{center}
+
+    \textsc{\LARGE Université de Bordeaux}\\[2cm]
+
+    \textsc{\Large Rapport de TER}\\[1.5cm]
+            
+    \includegraphics[scale=0.11]{image/UB.jpg}
+    \\[3.5cm]
+
+    \HRule\\[0.3cm]
+    { \huge \bfseries Comparaison des méthodes de gradient\\[0.5cm] }
+    \HRule\\[7cm]
+
+    \begin{minipage}{0.4\textwidth}
+      \begin{flushleft} \large
+        Thibaut \textsc{Guégan}\\
+        Antoine \textsc{Boisseau}\\
+        2015-2016
+      \end{flushleft}
+    \end{minipage}
+    \begin{minipage}{0.4\textwidth}
+      \begin{flushright} \large
+        \emph{Tuteur :} M. Charles-Henri \textsc{Bruneau}\\
+        IMB \textsc{Université de Bordeaux}
+      \end{flushright}
+    \end{minipage}
+
+  \end{center}
+  \end{sffamily}
+\end{titlepage}
+
+\tableofcontents
+
+\chapter*{Introduction}
+
+Les méthodes de gradient désignent un ensemble d'algorithmes d'optimisation différentiable qui sont destinées à minimiser une fonction réelle différentiable. Ces méthodes sont itératives et procèdent donc par améliorations successives. Au point courant, un déplacement est effectué dans une direction propre à chaque méthode de manière à faire décroître la fonction. Le déplacement le long de cette direction est déterminé par la technique numérique connue sous le nom de recherche linéaire.
+
+Dans un premier temps, nous effectuerons un bref rappel sur les espaces de Krylov et les deux méthodes permettant d'exploiter la structure de ces espaces, la méthode de Lanczos et la méthode d'Arnoldi. De plus nous verrons comment le gradient simple peut être construit à partir de ces explications. Par la suite, nous étudierons le problème posé par notre tuteur, ce qui va de la discrétisation du domaine/problème à l'étude du système résultant, pour en exploiter ses propriétés en vue d'une meilleure implémentation. Finalement, à l'aide de notre programme développé en Fortran, nous testerons les différentes méthodes sur un problème périodique choisi arbitrairement.
+
+
+
+\chapter{Rappel sur les méthodes de gradient}
+
+Le but est de résoudre le système linéaire
+\begin{equation}
+Ax=b \label{system}
+\vspace{0.2cm}
+\end{equation}
+
+Les espaces de Krylov permettent de construire, par de simples opérations de type produit matrice/vecteur, produit scalaire ou combinaison linéaire de vecteurs, des sous-espaces affines très pertinents pour chercher des approximations de solution de tout système linéaire.
+
+Soit $x_0$ est un vecteur arbitraire de départ alors on pose $r_0=b-Ax_0$ ou $r_0$ est appelé vecteur résidu.
+\begin{def*}
+On appelle espace de Krylov d'ordre $n$, noté $\mathcal{K}_n$, l'espace vectoriel engendré par $r_0$ et ses $n-1$ produits itérés avec $A$
+\begin{equation*}
+\mathcal{K}_n(A,r_0)=Vect\left \{r_0,Ar_0,A^2r_0,\ldots,A^{n-1}r_0\right \}
+\end{equation*}
+\end{def*}
+
+\section{Gradient simple et conjugué}
+Soit $A \in \mathcal{M}_n$ une matrice symétrique définie positive et $x,b \in \mathbb{R}^n$. Comme énoncé en introduction les méthodes de gradient servent à minimiser une fonction réelle différentiable. Pour résoudre ce problème nous cherchons donc à minimiser la fonctionnelle $f$ tel que
+\begin{align}
+f :\quad \mathbb{R}^{n} &\to \mathbb{R} \\
+x &\mapsto \frac{1}{2}(Ax,x)-(b,x) \nonumber
+\end{align}
+
+\begin{prop}
+Soit $A \in \mathcal{M}_n(\mathbb{R})$ une matrice symétrique définie positive et $b \in \mathbb{R}^n$. Alors $\overline{x}\in \mathbb{R}^n$ est solution du système linéaire~\eqref{system} ssi
+\begin{equation*}
+\forall x \in \mathbb{R}^n, \quad f(\overline{x}) \leq f(x)
+\end{equation*}
+Où $f$ est la fonctionnelle définie au-dessus.
+\end{prop}
+
+\begin{dem*}
+Supposons $\overline{x}\in \mathbb{R}^n$ solution du système linéaire~\eqref{system}, on a alors $\forall x \in \mathbb{R}^n$
+\begin{align*}
+f(x) -f(\overline{x})&=\dfrac{1}{2}(Ax,x)-(b,x)-\dfrac{1}{2}(A\overline{x},\overline{x})+(b,\overline{x}) \\
+&=\dfrac{1}{2}(Ax,x)-\dfrac{1}{2}(A\overline{x},\overline{x})-(b,x-\overline{x}) \\
+&=\dfrac{1}{2}(Ax,x)-\dfrac{1}{2}(A\overline{x},\overline{x})-(A\overline{x},x-\overline{x}) \quad \mbox{Car $\overline{x}$ solution de~\eqref{system}} \\
+&=\dfrac{1}{2}(Ax,x)+\dfrac{1}{2}(A\overline{x},\overline{x})-(A\overline{x},x) \\
+&=\dfrac{1}{2}(A(x-\overline{x}),x-\overline{x}) \quad \mbox{Car $A$ est symétrique} \\
+&\geq 0 \quad \mbox{Car $A$ est définie positive}
+\end{align*}
+Réciproquement, supposons que la proposition précédente soit vérifiée. $\forall y \in \mathbb{R}^n$ on définit la fonction $g$ tel que
+\begin{align*}
+g :\quad \mathbb{R} &\to \mathbb{R} \\
+t &\mapsto f(\overline{x}+ty)
+\end{align*}
+On a donc $\forall t \in \mathbb{R}, \quad g(0) \leq g(t)$\\
+Par conséquent zéro est un minimum de la fonction $g$ d'où $g'(0)=0$.\\
+Par ailleurs
+\begin{align*}
+g'(0)&=\lim\limits_{t \rightarrow 0}\dfrac{g(t)-g(0)}{t} \\
+&=\lim\limits_{t \rightarrow 0} \dfrac{\dfrac{1}{2}(A(\overline{x}+ty),\overline{x}+ty)-(b,\overline{x}+ty)-\dfrac{1}{2}(A(\overline{x}),\overline{x})+(b,\overline{x})}{t} \\
+&=\lim\limits_{t \rightarrow 0} \dfrac{t( (A\overline{x},y)-(b,y))+\dfrac{1}{2}t^2(Ay,y)}{t}=(A\overline{x}-b,y)
+\end{align*}
+Donc $\forall y \in \mathbb{R}^n, \quad (A\overline{x}-b,y)=0$\\
+C'est-à-dire que $\overline{x}$ est solution du système linéaire~\eqref{system}.\hspace{6.5cm} $\qed$
+\end{dem*}
+\begin{rem*}
+Si on calcule le gradient de $f$, on obtient
+\begin{equation}
+\nabla f(x)=Ax-b \label{gradf}
+\end{equation}
+Si $\nabla f(x)=0$ alors $x$ est solution du système original. Inversement si $y$ est solution du système on remarque que
+\begin{equation*}
+f(x)=f(y+(x-y))=f(y)+\dfrac{1}{2}(A(x-y),x-y) \quad \forall x\in \mathbb{R}^n
+\end{equation*}
+Et donc $f(y) \leq f(x)$ avec la proposition précédente on a que $y$ est solution du système.
+\end{rem*}
+\begin{rem*}
+Si $A$ est non symétrique inversible, on remplace le système~\eqref{system} par
+\begin{equation}
+A^tAx=A^tb \label{nonsym}
+\end{equation}
+\end{rem*}
+
+Le problème est donc de déterminer le minimiseur $x$ de $f$ en partant d'un point $x_0$, ce qui revient à déterminer les directions de descente qui permettent de se rapprocher le plus possible de la solution $x$. On doit donc effectuer un pas à partir de $x_0$ le long d'une direction $p_0$, puis fixer un nouveau point le long de celle-ci, $x_1$. Puis on réitère le procédé. On a
+\begin{equation*}
+x_{k+1}=x_k+\alpha_k p_k
+\end{equation*}
+Où $\alpha_k$ est la valeur qui fixe la longueur du pas. L'idée la plus naturelle est de prendre $p_k=\nabla f(x_k)$. D'après~\eqref{gradf}, $\nabla f(x_k)=Ax_k -b=-r_k$. On a donc $p_k=r_k=-\nabla f(x_k)$.
+
+Il reste à déterminer le paramètre $\alpha_k$. On choisit $\alpha_k$ tel que $f(x_{k+1})$ est minimal. En écrivant que la dérivée par rapport à $\alpha_k$ s'annule au point où la fonctionnelle admet un minimum local, on obtient
+\begin{equation*}
+\alpha_k=\dfrac{p_k^t r_k}{p_k^t Ap_k}
+\end{equation*}
+
+Dans le cas où $p_k=r_k$ on obtient le gradient simple (GS), ce qui nous mène à l'algorithme en annexe~\ref{gradsimple}. On peut se demander si un autre choix de direction de recherche $p_k$ ne pourrait pas donner une convergence plus rapide.
+
+C'est possible en posant $p_{k+1}=r_{k+1}+\beta_k p_k$ et $\beta_{k}=\dfrac{r_{k+1}^t r_{k+1}}{r_k^t r_k}$, résultat que nous admettrons. Avec cette nouvelle direction de descente on obtient le gradient conjugué (GC),~\ref{gradconju}.
+
+\section{Generalized minimal residual method}
+
+Une approche différente de~\ref{nonsym} pour résoudre les cas non symétriques est la méthode de Krylov appelée GmRes, elle consiste à minimiser la norme euclidienne du résidu $\left\|r_k\right\|_2$.
+
+\begin{prop}[Admise]
+La méthode GmRes est caractérisée par
+\begin{align*}
+x_k &\in x_0 + \mathcal{K}_k(A,r_0) \\
+r_k &\perp A\mathcal{K}_k(A,r_0)
+\end{align*}
+et cette condition est équivalente à
+\begin{equation}
+\left\|r_k\right\|_2 = \min_{x \in x_0 + \mathcal{K}_k(A,r_0)} \left\|b-Ax\right\|_2 \label{moindrecarre}
+\end{equation}
+La méthode GmRes n'échoue pas (le problème~\ref{moindrecarre} a une solution unique). De plus, la convergence est monotone et la solution est atteinte en au plus $n$ itérations.
+\end{prop}
+
+L'algorithme GmRes~\ref{gmres} utilisé dans le cadre de ce TER est une version simplifiée, l'originel est plus compliqué à mettre en place en raison de plusieurs facteurs comme:
+\begin{itemize}
+\item Construire les espaces de Krylov revient à en déterminer des bases. Or la base naturelle $(r_0,Ar_0,A^2r_0,\ldots,A^{n-1}r_0)$ ne peut pas être utilisé en pratique à cause de son instabilité numérique. En effet, il est clair que le terme $A^{n-1}r_0$ peut rapidement dépasser le nombre de chiffres significatifs représentables en 64 bits. Pour résoudre ce problème l'algorithme d'Arnoldi produit une base $W$-orthonormale $\left\{V_1,\ldots,V_t\right\}$ de l'espace de Krylov $\mathcal{K}_k(A,r_0)$ à l'aide du procédé de Gram-Schmidt.
+\item Trouver $x_k$ réalisant $\min\limits_{x \in \mathbb{R}^n} \left\|\left\|r_0\right\|_We_1-\tilde{H}_nx\right\|_2$ ou $\tilde{H}_n$ est une matrice de Hessenberg supérieur issue de l'algorithme d'Arnoldi.
+\end{itemize}
+
+\section{Biconjugate gradients method}
+
+À l'instar de la méthode GmRes qui a de bonnes propriétés de minimisation mais pas de récurrence courte, la méthode BiCG possède une récurrence courte mais pas de propriété de minimisation du résidu de plus elle est susceptible d'échouer.
+
+La méthode consiste à résoudre le système augmenté
+
+\begin{equation}
+\label{sysbicg}
+\begin{pmatrix}
+A & 0 \\
+0 & A^t
+\end{pmatrix}
+\begin{pmatrix}
+x \\
+\overline{x}
+\end{pmatrix}
+=
+\begin{pmatrix}
+b \\
+\overline{b}
+\end{pmatrix}
+\end{equation}
+
+\begin{prop}[Admise]
+La méthode BiCG est caractérisée par
+\begin{align*}
+x_k &\in x_0 + \mathcal{K}_k(A,r_0) \\
+\overline{x}_k &\in \overline{x}_0 + \mathcal{K}_k(A^t,\overline{r}_0) \\
+r_k &\perp A\mathcal{K}_k(A^t,\overline{r}_0) \\
+\overline{r}_k &\perp A\mathcal{K}_k(A,r_0)
+\end{align*}
+La méthode risque d'échouer.
+\end{prop}
+
+L'algorithme du BiCG~\ref{bicg} est assez semblable à celui du GC~\ref{gradconju}, cela s'explique par le fait que le GC est construit sur une méthode de Lanczos symétrique et le BiCG sur une méthode de Lanczos non symétrique (ou bi-Lanczos), d'où les similitudes.
+\newpage
+\chapter{Discrétisation par différences finies}
+
+Avant de pouvoir comparer les différentes méthodes, il est nécessaire de bien discrétiser le problème donné pour pouvoir ensuite le mettre en équation. Le problème qui sera considéré par la suite est le suivant
+
+Soient $\Omega=[0,1]\times [0,1]$, $f\in C^0(\overline{\Omega})$ et $\beta , \gamma \in \mathbb{R}^{+}$
+\begin{equation}
+(\mathcal{P})
+\left\lbrace
+\begin{array}{r r r l}
+-\Delta u + \beta div\,u + \gamma u &=& f & \mbox{sur $\overset{\circ}{\Omega}$} \label{equa} \tag{2}\\
+u &=& 0 & \mbox{sur $\partial\Omega$}\\
+\end{array}\right.
+\end{equation}
+
+Comme on peut le remarquer,~\eqref{equa} est défini à l'aide de deux opérateurs différentiels bien connu, le laplacien et la divergence. Mais dans un premier temps il est nécessaire de délimiter le domaine $\Omega$.
+
+\section{Le domaine}
+
+La discrétisation du domaine $\overset{\circ}{\Omega}$ sera faite sur $N=m^2$ nœuds de maillage, pour simplifier le maillage nous avons choisi une grille de pas $dx=dy=h=\frac{1}{m+1}$. Ce qui nous donne que le nombre de lignes et de colonnes de $\overset{\circ}{\Omega}$ est exactement égal à $m$.
+
+\begin{figure}[!h]
+\begin{tikzpicture}[scale=0.5]
+\draw [very thin, gray] (0,0) grid (10,10);
+\draw (0,1) node[left]{$1$};
+\draw (1,0) node[below]{$1$};
+\draw (5,5) node{$\bullet$} node[below right]{$(i,j)$};
+\draw [-,dashed] (0,5) -- (10,5);
+\draw [-,dashed] (5,0) -- (5,10);
+\draw (5,0) node[below]{$j$};
+\draw (0,5) node[left]{$i$};
+\draw [-,dashed] (-0.5,2) -- (-0.5,4);
+\draw [-,dashed] (2,-0.5) -- (4,-0.5);
+\draw [-,dashed] (6,-0.5) -- (8,-0.5);
+\draw [-,dashed] (-0.5,6) -- (-0.5,8);
+\draw (0,9) node[left]{$m$};
+\draw (9,0) node[below]{$m$};
+\draw[->,line width=0.4mm] (0,0) -- (0,11);
+\draw[->,line width=0.3mm] (0,0) -- (11,0);
+\draw[<->] (3,10.3) -- (4,10.3);
+\draw[<->] (10.3,3) -- (10.3,4);
+\draw (3.5,10.3) node[above]{$h$};
+\draw (10.3,3.5) node[right]{$h$};
+\draw[line width=0.1mm,color=red] (0,0) rectangle (10,10);
+\draw (12,9) node[right]{$\overset{\circ}{\Omega}$};
+\draw[->,line width=0.2mm] (12,9) to[bend right] (9,8);
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}[scale=0.5]
+\draw [very thin, gray] (0,0) grid (10,10);
+\draw (0,0) node[left]{$0$};
+\draw (0,0) node[below]{$0$};
+\draw (5,10) node{$\bullet$} node[above]{$(m+1,j)$};
+\draw (0,5) node{$\bullet$};
+\draw (-2,6) node{$(i,0)$};
+\draw[->,line width=0.2mm] (-1,6) to[bend left] (-0.2,5.3);
+\draw (5,0) node[below]{$j$};
+\draw (0,5) node[left]{$i$};
+\draw [-,dashed] (-0.5,0.5) -- (-0.5,4);
+\draw [-,dashed] (0.5,-0.5) -- (4,-0.5);
+\draw [-,dashed] (6,-0.5) -- (8,-0.5);
+\draw [-,dashed] (-0.5,7) -- (-0.5,9.3);
+\draw (0,10) node[left]{$m+1$};
+\draw (10,0) node[below]{$m+1$};
+\draw[->,line width=0.4mm] (0,0) -- (0,11);
+\draw[->,line width=0.3mm] (0,0) -- (11,0);
+\draw[line width=0.1mm,color=red] (0,0) rectangle (10,10);
+\draw[color=red] (12,12) node[right]{$\partial \Omega$};
+\draw[->,color=red,line width=0.2mm] (12,12) to[bend right] (9.5,10);
+\foreach \i in {0,...,10} {
+\draw (\i,0) node[color=red]{$\times$};
+}
+\foreach \i in {0,...,10} {
+\draw (\i,10) node[color=red]{$\times$};
+}
+\foreach \i in {0,...,10} {
+\draw (0,\i) node[color=red]{$\times$};
+}
+\foreach \i in {0,...,10} {
+\draw (10,\i) node[color=red]{$\times$};
+}
+\end{tikzpicture}
+\caption{Intérieur du domaine-Bord du domaine}
+\end{figure}
+
+
+Chaque point de $\Omega$ est repéré par un couple $(i,j)$, $i$ repère la ligne et $j$ la colonne. L'intérieur du domaine est repéré par $(i,j)\quad 1\leq i,j \leq m$.
+
+Les bords du domaine portant les conditions aux limites de type Dirichlet sont repérés par
+
+\begin{equation*}
+\begin{array}{l c l}
+(0,j) &0\leq j \leq m+1 &\mbox{Bord inférieur}\\
+(m+1,j) &0\leq j \leq m+1 &\mbox{Bord supérieur}\\
+(i,0) &0\leq i \leq m+1 &\mbox{Bord gauche}\\
+(i,m+1) &0\leq i \leq m+1 &\mbox{Bord droit}
+\end{array}
+\end{equation*}
+
+
+\label{numerotation}
+
+$\overset{\circ}{\Omega}$ comporte donc $m$ lignes et $m$ colonnes. Par la suite on notera $u_{i,j}$ le point aux coordonnés $u(x_i,y_j)$ avec $x_i=i\times h$ et $y_j=j\times h$, de la même manière on notera $f_{i,j}$.
+
+Les inconnues du problème qui sont au nombre de $N=m^2$ seront déduites des valeurs de $f_{i,j}$ au bord du domaine.
+
+\section{Le Problème}\label{probl}
+
+Comme énoncé plus haut,~\eqref{equa} fait intervenir le laplacien et la divergence de $u$. Nous avons donc besoin d'utiliser une méthode de discrétisation par différence finie pour approximer ces deux opérateurs. Le schéma utilisé est un schéma centré à cinq points.
+
+\subsection{La divergence}
+ 
+Pour rappel l'opérateur divergence en dimension $n$ est défini de la manière qui suit
+\begin{equation*}
+div\, u(x_{1},\ldots,x_{n})=\sum \limits_{k=1}^n \frac{\partial u}{\partial x_k} (x_{1},\ldots,x_{n})
+\end{equation*}
+
+Or dans notre cas nous sommes seulement en dimension deux donc nous avons
+\begin{equation*}
+div\, u(x,y)=\frac{\partial u}{\partial x}(x,y)+\frac{\partial u}{\partial y}(x,y)
+\end{equation*}
+
+Pour cette partie nous aurons besoin des formules de Taylor-Young à l'ordre 2 qui sont rappelées en annexe~\ref{taylor}. En $x$
+
+\begin{equation*}
+u(x+h,y)-u(x-h,y)=2h\frac{\partial u}{\partial x}(x,y)+\mathcal{O}(h^3)
+\end{equation*}
+
+Même chose en $y$
+\begin{equation*}
+u(x,y+h)-u(x,y-h)=2h\frac{\partial u}{\partial y}(x,y)+\mathcal{O}(h^3)
+\end{equation*}
+
+Finalement il vient rapidement que la discrétisation de la divergence en 2D est
+\begin{equation*}
+div\, u(x,y)=\frac{u(x+h,y)+u(x,y+h)-u(x,y-h)-u(x,y-h)}{2h}+\mathcal{O}(h^2)
+\end{equation*}
+
+Avec la numérotation proposée dans la section~\ref{numerotation} nous obtenons
+\begin{equation}
+div\, u_{i,j}=\frac{u_{i+1,j}+u_{i,j+1}-u_{i-1,j}-u_{i,j-1}}{2h}+\mathcal{O}(h^2) \label{div}
+\end{equation}
+
+\subsection{Le laplacien}
+
+Le laplacien en dimension deux est défini par la relation suivante
+
+\begin{equation*}
+\Delta u(x,y)=\frac{\partial^{2}u}{\partial x^2}(x,y)+\frac{\partial^{2}u}{\partial y^2}(x,y)
+\end{equation*}
+
+La discrétisation du laplacien est effectuée de la même manière que pour la divergence sauf que cette fois-ci les formules de Taylor-Young sont utilisées à l'ordre 3.
+ 
+On obtient donc la discrétisation suivante pour le laplacien en 2D
+
+\begin{equation*}
+\Delta u(x,y)=\frac{u(x+h,y)+u(x-h,y)+u(x,y+h)+u(x,y-h)-4u(x,y)}{h^2}+\mathcal{O}(h^2)
+\end{equation*}
+
+Finalement
+
+\begin{equation}
+\Delta u_{i,j}=\frac{u_{i+1,j}+u_{i-1,j}+u_{i,j+1}+u_{i,j-1}-4u_{i,j}}{h^2}+\mathcal{O}(h^2) \label{lapla}
+\end{equation}
+
+\chapter{Formation et étude du système linéaire}
+
+\section{Réindexation 1D}
+
+Grâce aux relations~\eqref{div} et~\eqref{lapla} l'équation~\eqref{equa} se traduit par
+\begin{equation*}
+\frac{4u_{i,j}-u_{i+1,j}-u_{i-1,j}-u_{i,j+1}-u_{i,j-1}}{h^2} + \beta \frac{u_{i+1,j}+u_{i,j+1}-u_{i-1,j}-u_{i,j-1}}{2h} + \gamma u_{i,j} = f_{i,j}
+\end{equation*}
+
+Mettons tout au même dénominateur pour expliciter la matrice résultante
+\begin{equation}
+[\beta h-2]u_{i+1,j}+[-\beta h -2]u_{i-1,j}+[8+2\gamma h^2]u_{i,j}+[\beta h-2]u_{i,j+1}+[-\beta h -2]u_{i,j-1}=2h^2 f_{i,j} \label{equadiscre}
+\end{equation}
+
+Pour l'intérieur du domaine nous devons résoudre un système linéaire à $N$ équations dont le vecteur solution sera approché par les $4(m+1)$ valeurs connues (celles sur $\partial \Omega$).
+
+Il est maintenant nécessaire de réindexer les points de $\Omega$ pour exprimer la solution sous forme de vecteur, pour cela le parcourt se fera de gauche à droite et de bas en haut. À l'aide de la relation suivante qui fait correspondre à un tableau 2D un vecteur 1D de même taille ($N$)
+\begin{equation}
+k=(i-1)m+j\qquad 1\leq i,j \leq m \label{indice}
+\end{equation}
+
+\begin{figure}
+\hspace{6cm}
+\begin{tikzpicture}[scale=0.5]
+\draw [very thin, gray] (0,0) grid (9,6);
+\draw (5,3) node{$\bullet$};
+\draw (12,3) node[scale=0.7]{$(i-1)m+j$};
+\draw[-,line width=0.2mm] (10,3) to[bend right] (5,3);
+\draw (1,1) node{$\bullet$} node[below left,scale=0.7]{$1$};
+\draw (2,1) node{$\bullet$} node[below right,scale=0.7]{$2$};
+\draw (8,1) node{$\bullet$} node[below left,scale=0.7]{$m$};
+\draw (8,2) node{$\bullet$} node[above right,scale=0.7]{$2m$};
+\draw (1,2) node{$\bullet$} node[above right,scale=0.7]{$m+1$};
+\draw (8,5) node{$\bullet$} node[above right,scale=0.7]{$m^2$};
+\draw [-,dashed] (0,3) -- (9,3);
+\draw [-,dashed] (5,0) -- (5,6);
+\draw[->,line width=0.3mm] (0,0) -- (0,7);
+\draw[->,line width=0.3mm] (0,0) -- (10,0);
+\draw[line width=0.1mm,color=red] (0,0) rectangle (9,6);
+\end{tikzpicture}
+\caption{Correspondance 2D-1D}
+\end{figure}
+
+Ce qui nous donne les correspondances suivantes
+\begin{equation*}
+\begin{array}{l c c}
+(i,j) &\rightarrow &k\\
+(i,j+1) &\rightarrow &k+1\\
+(i,j-1) &\rightarrow &k-1\\
+(i+1,j) &\rightarrow &k+m\\
+(i-1,j) &\rightarrow &k-m
+\end{array}
+\end{equation*}
+
+Finalement la relation~\eqref{equadiscre} avec l'indexation~\eqref{indice} nous mène à la relation
+\begin{equation}
+[-\beta h -2]u_{k-m}+[-\beta h -2]u_{k-1}+[8+2\gamma h^2]u_{k}+[\beta h-2]u_{k+1}+[\beta h-2]u_{k+m}=2h^2 f_{k}
+\end{equation}
+
+\section{Établissement du système}
+La matrice résultante est donc naturellement décomposée en $m\times m$ blocs de taille $m\times m$. De plus seuls les blocs diagonaux et extra-diagonaux sont non-nuls. La matrice est tridiagonale par blocs, notée par la suite $A$ et se décompose ainsi
+
+\begin{center}
+$A=\frac{1}{2h^2}$
+$\begin{pmatrix}
+\mathcal{D} & \mathcal{U} & 0 & \cdots & 0 \\
+\mathcal{L} & \mathcal{D} & \ddots & \ddots & \vdots \\
+0 & \ddots & \ddots & \ddots & 0 \\
+\vdots & \ddots & \ddots & \ddots & \mathcal{U}\\
+0 & \cdots & 0 & \mathcal{L} & \mathcal{D}\\
+\end{pmatrix}$
+\\[1.5cm]
+\end{center}
+
+\begin{center}
+$\mathcal{L}=$
+$\begin{pmatrix}
+-\beta h -2 &  0 &  \cdots &  0 \\
+0 &  \ddots &  \ddots &  \vdots \\
+\vdots &  \ddots &  \ddots &  0\\
+0 &  \cdots &  0 &  -\beta h -2\\
+\end{pmatrix}$
+$\qquad\qquad\mathcal{U}=$
+$\begin{pmatrix}
+\beta h -2 &  0 &  \cdots &  0 \\
+0 &  \ddots &  \ddots &  \vdots \\
+\vdots &  \ddots &  \ddots &  0\\
+0 &  \cdots &  0 &  \beta h -2\\
+\end{pmatrix}$
+\\[1.5cm]
+\end{center}
+
+\begin{center}
+$\mathcal{D}=$
+$\begin{pmatrix}
+8+2\gamma h^2 & \beta h -2 & 0 & \cdots & 0 \\
+-\beta h -2 & 8+2\gamma h^2 & \ddots & \ddots & \vdots \\
+0 & \ddots & \ddots & \ddots & 0 \\
+\vdots & \ddots & \ddots & \ddots & \beta h -2\\
+0 & \cdots & 0 & -\beta h -2 & 8+2\gamma h^2\\
+\end{pmatrix}$
+\end{center}
+
+\section{Propriétés de \texorpdfstring{$A$}{A}}
+
+Comme vu précédemment, la matrice est pentadiagonale donc très creuse. Pour donner un ordre d'idées lorsque la matrice est de taille au moins $1000\times 1000$ (ce qui est très petit) elle est vide à plus de $95\%$. Pour exploiter cet aspect lors de l'implémentation des algorithmes en Fortran, nous avons utilisé un stockage diagonal ce qui nous donne une matrice de taille $N\times 5$ au lieu de $N \times N$.
+
+De plus il est aisé de constater que si le paramètre $\beta$ vaut zéro\label{betazero} la matrice est définie symétrique positive à diagonale strictement dominante $\forall \gamma \in \mathbb{R}^{+}$, ce qui nous garanties la convergence de la méthode du GS et du GC.
+
+\chapter{Résultats}
+
+La fonction $g$ pour les conditions aux limites de type Dirichlet est
+
+\begin{equation*}
+g(x,y)=\sin(2 \pi x) \exp(-y^2)
+\end{equation*}
+
+Et la fonction $f$, obtenue en calculant $-\Delta g(x,y) + \beta div\,g(x,y) + \gamma g(x,y)=f(x,y)$
+
+\begin{equation*}
+f(x,y)=2 \sin(2 \pi x) \exp(-y^2) \left[ -2 y^2 +2\pi^2 +1 +\dfrac{\gamma}{2} +\beta \left( \dfrac{\pi}{\tan(2 \pi x)} -y \right) \right]
+\end{equation*}
+
+Tous les résultats qui vont suivre proviennent de notre programme codé en Fortran 95. Compilé à l'aide de deux compilateurs différents gfortran et ifort. Le premier est connu de tous car issu de la GNU Compiler Collection, le second provient de la suite Intel Parallel Studio XE 2016 gratuit pour les étudiants sur simple demande. Les résultats seront tous issus de l’exécutable généré via ifort, voici un graphique pour justifier ce choix
+
+\begin{center}
+\includegraphics[scale=0.50]{image/gfortranifort.eps}
+\end{center}
+
+Étant donné que notre but est d'être le plus précis possible (grand nombre de noeuds par direction) avec un temps de résolution le plus petit possible il est naturel de préférer ifort.
+
+\section{Avec \texorpdfstring{$\beta =0$}{B}}
+
+Pour cette section le paramètre $\beta$ est fixé à zéro. Ce qui implique, comme énoncé en~\ref{betazero}, que la matrice est définie symétrique positive à diagonale strictement dominante et donc la convergence du GS et GC\@. Nous utiliserons donc seulement ces deux méthodes.
+
+\begin{center}
+\includegraphics[scale=0.36]{image/gs_500_0_20.eps}
+\includegraphics[scale=0.36]{image/gc_500_0_20.eps}
+\end{center}
+\begin{center}
+\includegraphics[scale=0.36]{image/gs_500_0_01.eps}
+\includegraphics[scale=0.36]{image/gc_500_0_01.eps}
+\end{center}
+
+Première constatation les erreurs absolues sont de l'ordre de $10^{-6}$ ce qui est correct. La seconde remarque concerne les temps de résolution, dans le cas le plus long à résoudre avec $\gamma = 0.1$ on atteint 58 minutes pour le GS contre 10 secondes pour le GC\@. Même remarque dans le cas ou $\gamma= 20$. Ce qui s'explique par les taux de convergence des deux méthodes, en effet pour le GS on a
+
+\begin{equation*}
+C_{GS}=\dfrac{cond_2(A)-1}{cond_2(A)+1}
+\end{equation*}
+
+Et pour le GC
+
+\begin{equation*}
+C_{GC}=\dfrac{\sqrt{cond_2(A)}-1}{\sqrt{cond_2(A)}+1}
+\end{equation*}
+
+Avec le conditionnement deux de $A$ égal à $cond_2(A)=\dfrac{\lambda_{\max}}{\lambda_{\min}}$, $\lambda_{\max}$ étant la plus grande valeur propre de $A$ et $\lambda_{\min}$ la plus petite.
+
+Si le conditionnement de $A$ est très mauvais, ce qui est le cas ici, le gain en matière de vitesse de convergence est colossal. De plus lorsque $\gamma$ tend vers zéro la matrice devient à diagonale fortement dominante et non strictement dominante, on peut voir $\beta=0,\gamma=0.1$ comme un cas limite pour le GS\@.
+
+\section{Avec \texorpdfstring{$\beta =1$}{B}}
+
+Cette fois-ci le paramètre $\beta$ est fixé à un, ce qui nous enlève la propriété de symétrie de la matrice $A$, il est donc impossible d'avoir des résultats théoriques pour conclure sur la convergence des méthodes du GS et GC (il est quand même possible de préconditionner le système par $A^t$). Pour pouvoir résoudre ce nouveau problème nous utiliserons deux méthodes différentes, celle du GmRes et celle du BiCG dont voici leur courbe de convergence
+
+\begin{center}
+\includegraphics[scale=0.36]{image/gmres_500_1_20.eps}
+\includegraphics[scale=0.36]{image/bicg_500_1_20.eps}
+\end{center}
+\begin{center}
+\includegraphics[scale=0.36]{image/gmres_500_1_01.eps}
+\includegraphics[scale=0.36]{image/bicg_500_1_01.eps}
+\end{center}
+
+Dans un premier temps on remarque que les erreurs absolues sont maintenant de l'ordre de $10^{-4}$, on perd environ $10^{-2}$ de précision ce qui est à la fois beaucoup et compréhensible étant donné que le problème devient plus compliqué à étudier/résoudre (perte de la symétrie). Dans le cas le plus simple avec $\gamma=20$ les temps de résolutions sont du même ordre de grandeur, la vingtaine de secondes. Finalement, dans le cas le plus ardu le BiCG l'emporte avec une convergence en seulement 27s.
+
+\chapter{Conclusion}
+
+Nous avons vu que toutes les méthodes possèdent leurs propres points forts et points faibles, sauf le BiCG qui semble être à toute épreuve. On pourrait penser: Pourquoi utiliser d'autre méthode que le BiCG\@? En réalité le BiCG est moins performant que le GC pour le cas de matrice définie symétrique positive en effet
+
+\begin{figure}[h]
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+\cline{2-5}
+\multicolumn{1}{c|}{}& \multicolumn{2}{|c|}{GC} & \multicolumn{2}{|c|}{BiCG} \\ \hline
+$\beta$ & $0$ & $0$ & $0$ & $0$ \\ \hline
+$\gamma$ & $20$ & $0.1$ & $20$ & $0.1$ \\ \hline
+Temps en s & $6.54$ & $7.40$ & $14.40$ & $15.13$ \\
+\hline
+\end{tabular}
+\caption{Comparatif GC-BiCG}
+\end{figure}
+
+Comme on peut le voir le BiCG est deux fois plus long que le GC\@. Cela s'explique par le fait que le BiCG cherche à résoudre un système augmenté~\eqref{sysbicg} et a donc un coût en terme de calcul plus élevé que le GC\@.
+
+In fine, les méthodes de gradient sont de bonnes méthodes à condition d'avoir bien étudié le système à résoudre. Prendre en compte toutes les propriétés que ce soit la symétrie, diagonale fortement/strictement dominante, le conditionnement, etc\ldots\footnote{Si le conditionnement de la matrice est mauvais, il faut envisager un préconditionnement pour améliorer celui-ci.} Une fois cette étape de compréhension effectuée il faut considérer ces résultats pour choisir judicieusement la méthode adéquate et le stockage le plus adapté.
+
+Par exemple, si la matrice ne possède aucune propriété élémentaire, il semble juste d'opter pour un stockage profil combiné avec un BiCG, à condition que la matrice ne soit pas singulière. En effet rappelons-le, le BiCG peut échouer si c'est le cas le GmRes est envisageable, car lui n'échoue pas mais est plus long à converger.
+
+A contrario si la matrice a de bonnes propriétés, le GC l'emporte face aux méthodes plus complexes.
+
+Pour résumer, à chaque problème sa combinaison méthode/stockage.
+
+\chapter{Annexe}
+
+\section{Formule de Taylor-Young}
+\label{taylor}
+
+La formule de Taylor-Young à plusieurs variables utilisée lors de la discrétisation par différences finies à la section~\ref{probl} est
+
+\begin{equation*}
+u(x+h)=\sum \limits_{k=0}^n \frac{d^k u(x)(h,\ldots,h)}{k!}(x)+\mathcal{O}(\| h\|^{n+1})
+\end{equation*}
+
+Dans notre cas nous avons un schéma centré à cinq points nous obtenons donc les approximations suivantes
+
+\begin{align*}
+u(x+h,y)=u(x,y)+h\dfrac{\partial u}{\partial x}(x,y)+\dfrac{h^2}{2!}\dfrac{\partial^{2}u}{\partial x^2}(x,y)+\dfrac{h^3}{3!}\dfrac{\partial^{3}u}{\partial x^3}(x,y)+\mathcal{O}(h^4) \\
+\vspace{3cm} \\
+u(x-h,y)=u(x,y)-h\frac{\partial u}{\partial x}(x,y)+\frac{h^2}{2!}\frac{\partial^{2}u}{\partial x^2}(x,y)-\frac{h^3}{3!}\frac{\partial^{3}u}{\partial x^3}(x,y)+\mathcal{O}(h^4) \\
+\vspace{3cm} \\
+u(x,y+h)=u(x,y)+h\frac{\partial u}{\partial y}(x,y)+\frac{h^2}{2!}\frac{\partial^{2}u}{\partial y^2}(x,y)+\frac{h^3}{3!}\frac{\partial^{3}u}{\partial y^3}(x,y)+\mathcal{O}(h^4) \\
+\vspace{3cm} \\
+u(x,y-h)=u(x,y)-h\frac{\partial u}{\partial y}(x,y)+\frac{h^2}{2!}\frac{\partial^{2}u}{\partial y^2}(x,y)-\frac{h^3}{3!}\frac{\partial^{3}u}{\partial y^3}(x,y)+\mathcal{O}(h^4) 
+\end{align*}
+
+\section{Algorithme}
+
+Les algorithmes des méthodes de gradient implémentés en Fortran pour la réalisation de ce TER sont issus du cours de Calcul scientifique de L3 Ingénieries-Mathématiques par Charles-Henri Bruneau. Il en est de même pour le stockage diagonal mais qui lui ne sera pas énoncé.
+
+\label{gradsimple}
+\begin{center}
+\begin{minipage}[t]{0.4\textwidth}
+\begin{algorithm}[H]
+choisir $x_0$ arbitraire\\
+$r_0=b-Ax_0$\\
+\vspace{0.1cm}
+\While{$\dfrac{\| r\|}{\| b\|} \geq \epsilon$}{
+\vspace{0.1cm}
+$\alpha_k=\dfrac{r_k^t r_k}{r^t_k Ar_k}$\\
+\vspace{0.1cm}
+$x_{k+1}=x_k+\alpha_k r_k$\\
+$r_{k+1}=r_k-\alpha_k A r_k$\\
+}
+\caption{GS}
+\end{algorithm}
+\end{minipage}
+\end{center}
+
+\label{gradconju}
+\begin{center}
+\begin{minipage}[t]{0.4\textwidth}
+\begin{algorithm}[H]
+choisir $x_0$ arbitraire\\
+$r_0=b-Ax_0$\\
+$p_0=r_0$\\
+\While{$\dfrac{\| r\|}{\| b\|} \geq \epsilon$}{
+\vspace{0.1cm}
+$\alpha_k=\dfrac{p_k^t r_k}{p_k^t Ap_k}$\\
+\vspace{0.1cm}
+$x_{k+1}=x_k+\alpha_k p_k$\\
+$r_{k+1}=r_k-\alpha_k A p_k$\\
+\vspace{0.1cm}
+$\beta_{k}=\dfrac{r_{k+1}^t r_{k+1}}{r_k^t r_k}$\\
+\vspace{0.1cm}
+$p_{k+1}=r_{k+1}+\beta_{k} p_k$\\
+}
+\caption{GC}
+\end{algorithm}
+\end{minipage}
+\end{center}
+
+\label{gmres}
+\begin{center}
+\begin{minipage}[t]{0.4\textwidth}
+\begin{algorithm}[H]
+choisir $x_0$ arbitraire\\
+$r_0=b-Ax_0$\\
+$p_0=r_0$\\
+$q_0=Ap_0$\\
+\While{$\dfrac{\| r\|}{\| b\|} \geq \epsilon$}{
+\vspace{0.1cm}
+$\alpha_k=\dfrac{q_k^t r_k}{q_k^t q_k}$\\
+\vspace{0.1cm}
+$x_{k+1}=x_k+\alpha_k p_k$\\
+$r_{k+1}=r_k-\alpha_k q_k$\\
+\vspace{0.1cm}
+$\beta_{k+1}=-\dfrac{q_k^t Ar_{k+1}}{q_k^t q_k}$\\
+\vspace{0.1cm}
+$p_{k+1}=r_{k+1}+\beta_{k+1} p_k$\\
+$q_{k+1}=Ar_{k+1}+\beta_{k+1} q_k$\\
+}
+\caption{GmRes}
+\end{algorithm}
+\end{minipage}
+\end{center}
+
+\label{bicg}
+\begin{center}
+\begin{minipage}[t]{0.4\textwidth}
+\begin{algorithm}[H]
+choisir $x_0$, $\overline{b}$ et $\overline{x}_0$ arbitraire\\
+$r_0=b-Ax_0$\\
+$\overline{r}_0=\overline{b}-\overline{x}_0$\\
+$p_0=r_0$\\
+$\overline{p}_0=\overline{r}_0$\\
+\While{$\dfrac{\| r\|}{\| b\|} \geq \epsilon$}{
+\vspace{0.1cm}
+$\alpha_k=\dfrac{\overline{r}_k^t r_k}{\overline{p}_k^t Ap_k}$\\
+\vspace{0.1cm}
+$x_{k+1}=x_k+\alpha_k p_k$\\
+$r_{k+1}=r_k-\alpha_k A p_k$\\
+$\overline{r}_{k+1}=\overline{r}_k-\alpha_k A^t \overline{p}_k$\\
+\vspace{0.1cm}
+$\beta_{k+1}=\dfrac{\overline{r}_{k+1}^t r_{k+1}}{\overline{r}_k^t r_k}$\\
+\vspace{0.1cm}
+$p_{k+1}=r_{k+1}+\beta_{k+1} p_k$\\
+$\overline{p}_{k+1}=\overline{r}_{k+1}+\beta_{k+1} \overline{p}_{k}$
+}
+\caption{BiCG}
+\end{algorithm}
+\end{minipage}
+\end{center}
+
+\section{Code Fortran}
+
+\lstinputlisting[language=Fortran]{../Fortran/main.f90}
+
+\lstinputlisting[language=Fortran]{../Fortran/methode_resolution.f90}
+
+\end{document}
